@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Configuración</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera"><div><h1>Configuración</h1><p>Los cambios en la detección se aplican de inmediato a todas las cámaras.</p></div></div>
+  <div class="pestanas" role="tablist" id="pestanas">
+    <button type="button" data-p="deteccion" class="on">Detección</button>
+    <button type="button" data-p="usuarios" data-rol="admin">Usuarios</button>
+    <button type="button" data-p="registros" data-rol="admin">Registros</button>
+    <button type="button" data-p="sistema">Sistema</button>
+    <button type="button" data-p="cuenta">Mi cuenta</button>
+  </div>
+
+  <section data-panel="deteccion">
+    <div id="aviso-lectura" class="banda azul oculto">Solo los administradores pueden cambiar estos parámetros.</div>
+    <div id="grupos"></div>
+    <div class="acciones" data-rol="admin"><button class="btn primario" id="btn-guardar">Guardar cambios</button><button class="btn" id="btn-restaurar">Descartar cambios</button></div>
+  </section>
+
+  <section data-panel="usuarios" class="oculto">
+    <section class="bloque sin-relleno">
+      <div class="bloque-cab"><h2>Usuarios</h2><button class="btn primario chico" id="btn-usuario">Agregar usuario</button></div>
+      <div class="tabla-scroll"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
+      <tbody id="usuarios"></tbody></table></div>
+    </section>
+    <p style="color:var(--tinta-2);font-size:14px">El visor solo consulta. El supervisor además atiende alertas, revisa eventos, exporta evidencia, genera reportes y enciende o apaga cámaras. El administrador gestiona cámaras, zonas, estaciones, usuarios y parámetros.</p>
+  </section>
+
+  <section data-panel="registros" class="oculto">
+    <div class="rejilla-2" style="grid-template-columns:1fr 1fr">
+      <section class="bloque sin-relleno">
+        <div class="bloque-cab"><h2>Registro técnico</h2>
+          <select id="log-nivel" style="width:auto"><option value="">Todos</option><option value="error">Errores</option><option value="aviso">Avisos</option><option value="info">Información</option></select></div>
+        <div class="tabla-scroll" style="max-height:560px;overflow-y:auto"><table><thead><tr><th>Hora</th><th>Nivel</th><th>Origen</th><th>Mensaje</th></tr></thead><tbody id="log-tec"></tbody></table></div>
+      </section>
+      <section class="bloque sin-relleno">
+        <div class="bloque-cab"><h2>Bitácora de accesos</h2></div>
+        <div class="tabla-scroll" style="max-height:560px;overflow-y:auto"><table><thead><tr><th>Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead><tbody id="log-acc"></tbody></table></div>
+      </section>
+    </div>
+  </section>
+
+  <section data-panel="sistema" class="oculto">
+    <section class="bloque"><h2>Estado del sistema</h2><dl class="ficha" id="sistema"></dl></section>
+    <section class="bloque" data-rol="admin">
+      <h2>Retención de imágenes</h2>
+      <p style="color:var(--tinta-2);margin-bottom:12px">Cada 24 horas se eliminan las imágenes y clips más antiguos que el periodo de retención (Resolución 5858 de 2019). Los datos de los eventos se conservan para las estadísticas.</p>
+      <button class="btn" id="btn-purgar">Ejecutar la purga ahora</button>
+    </section>
+  </section>
+
+  <section data-panel="cuenta" class="oculto" id="cuenta">
+    <section class="bloque" style="max-width:520px">
+      <h2>Cambiar contraseña</h2>
+      <div class="campo"><label for="p-actual">Contraseña actual</label><input id="p-actual" type="password" autocomplete="current-password"></div>
+      <div class="campo"><label for="p-nueva">Nueva contraseña</label><input id="p-nueva" type="password" autocomplete="new-password"><span class="ayuda">Mínimo 8 caracteres.</span></div>
+      <div class="campo"><label for="p-rep">Repite la nueva contraseña</label><input id="p-rep" type="password" autocomplete="new-password"></div>
+      <button class="btn primario" id="btn-pass">Cambiar contraseña</button>
+    </section>
+  </section>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('configuracion.html')) {
+  const $ = (id) => document.getElementById(id);
+  const admin = TE.puede('admin');
+  let original = {}, modelos = [];
+
+  // ── pestañas ───────────────────────────────────────────────────
+  function abrir(p) {
+    document.querySelectorAll('#pestanas button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+    document.querySelectorAll('[data-panel]').forEach(s => s.classList.toggle('oculto', s.dataset.panel !== p));
+    if (p === 'usuarios') usuarios();
+    if (p === 'registros') registros();
+    if (p === 'sistema') sistema();
+  }
+  $('pestanas').onclick = (e) => e.target.dataset.p && abrir(e.target.dataset.p);
+  if (location.hash === '#cuenta') abrir('cuenta');
+
+  // ── parámetros de detección ────────────────────────────────────
+  const GRUPOS = [
+    ['Detector', [
+      ['motor', 'select', 'Motor de detección', 'YOLO detecta personas y buses. Movimiento es un respaldo para equipos sin PyTorch: menos preciso y no reconoce buses.', [['yolo', 'YOLO (recomendado)'], ['movimiento', 'Movimiento (MOG2)']]],
+      ['modelo', 'modelo', 'Modelo YOLO', 'n es el más rápido; s y m son más precisos pero más lentos. Se descarga automáticamente la primera vez.'],
+      ['dispositivo', 'select', 'Procesador', 'Automático usa la GPU NVIDIA si PyTorch la detecta.', [['auto', 'Automático'], ['cpu', 'CPU'], ['cuda', 'GPU NVIDIA (CUDA)']]],
+      ['tracker', 'select', 'Seguimiento de personas', 'El propio funciona bien con pocos cuadros por segundo. ByteTrack conviene con GPU y más de 15 FPS.', [['propio', 'Propio, para FPS bajos'], ['bytetrack', 'ByteTrack']]],
+      ['imgsz', 'number', 'Tamaño de inferencia (px)', '960 detecta mejor a personas lejanas; 640 es más rápido en equipos lentos.', { min: 320, max: 1920, step: 32 }],
+      ['ancho_proceso', 'number', 'Ancho de procesamiento (px)', 'El video se reduce a este ancho antes de analizarlo y mostrarlo.', { min: 320, max: 1920, step: 32 }],
+      ['conf_persona', 'number', 'Confianza mínima para personas', 'Entre 0 y 1. Más bajo detecta más personas pero con más falsos positivos.', { min: 0.05, max: 0.95, step: 0.05 }],
+      ['conf_vehiculo', 'number', 'Confianza mínima para buses', 'Entre 0 y 1.', { min: 0.05, max: 0.95, step: 0.05 }],
+      ['clases_vehiculo', 'clases', 'Objetos que cuentan como bus', 'No marques «tren»: YOLO suele confundir la estructura de la estación con un tren y creería que siempre hay bus.'],
+    ]],
+    ['Reglas de puertas laterales', [
+      ['min_frames_zona', 'number', 'Cuadros para confirmar un lado', 'Cuántos cuadros seguidos debe estar una persona en el carril o la plataforma para contarla ahí. 2 es un buen valor a 4–15 FPS; súbelo si hay falsas alertas.', { min: 1, max: 30, step: 1 }],
+      ['profundidad_cruce', 'number', 'Distancia mínima a la línea de puerta', 'En alturas de persona. Los pies deben alejarse al menos esto de la línea para contar el lado; evita contar a quien está parado sobre el umbral.', { min: 0.02, max: 1, step: 0.05 }],
+      ['ventana_cruce_s', 'number', 'Tiempo máximo del cruce (s)', 'Si la persona tarda más que esto entre el carril y la plataforma, no se cuenta como cruce.', { min: 0.5, max: 60, step: 0.5 }],
+      ['ventana_reid_s', 'number', 'Recuperar personas tapadas por la puerta (s)', 'Si el marco de la puerta tapa a alguien y el seguimiento le asigna otro número, se une con su recorrido anterior dentro de este tiempo. 0 lo desactiva.', { min: 0, max: 10, step: 0.5 }],
+      ['solape_bus', 'number', 'Cobertura de la bahía para contar el bus', 'Fracción de la bahía que debe tapar un bus para considerarlo detenido en la puerta.', { min: 0.02, max: 1, step: 0.05 }],
+      ['gracia_bus_s', 'number', 'Segundos de gracia tras salir el bus', 'Durante este tiempo los cruces se consideran pasajeros que acaban de bajar.', { min: 0, max: 60, step: 0.5 }],
+      ['tiempo_carril_s', 'number', 'Segundos en el carril para alertar', 'Permanencia de una persona en la vía sin bus antes de generar la alerta «Persona en el carril».', { min: 0.5, max: 120, step: 0.5 }],
+      ['aforo_max', 'number', 'Aforo en la zona de puertas', 'Personas en la plataforma a partir de las cuales se avisa aglomeración.', { min: 2, max: 200, step: 1 }],
+      ['cooldown_s', 'number', 'Pausa entre alertas repetidas (s)', 'Tiempo mínimo entre dos alertas de permanencia o salida en la misma cámara. Los ingresos siempre se registran.', { min: 0, max: 3600, step: 1 }],
+    ]],
+    ['Alertas', [
+      ['notificaciones', 'bool', 'Generar alertas', 'Si se desactiva, los eventos se siguen registrando pero no generan alertas.'],
+      ['umbral_alerta', 'number', 'Confianza mínima para alertar', 'Eventos con menor confianza quedan en el historial sin alerta.', { min: 0, max: 1, step: 0.05 }],
+      ['sonido_alertas', 'bool', 'Sonido de alerta', 'Pitido en el navegador al llegar una alerta nueva.'],
+    ]],
+    ['Evidencia y privacidad', [
+      ['anonimizar_en_vivo', 'bool', 'Anonimizar también el video en vivo', 'La evidencia guardada siempre se anonimiza. Esto además pixela los rostros en el monitoreo.'],
+      ['guardar_clips', 'bool', 'Guardar clip de cada evento', 'Secuencia corta antes y después del evento para que el operador lo verifique.'],
+      ['clip_pre_s', 'number', 'Segundos antes del evento', '', { min: 0, max: 15, step: 1 }],
+      ['clip_post_s', 'number', 'Segundos después del evento', '', { min: 0, max: 15, step: 1 }],
+      ['clip_fps', 'number', 'Cuadros por segundo del clip', '', { min: 1, max: 15, step: 1 }],
+      ['retencion_dias', 'number', 'Días de retención de imágenes', 'La Resolución 5858 de 2019 fija un máximo de 30 días salvo requerimiento judicial.', { min: 1, max: 365, step: 1 }],
+    ]],
+  ];
+  const CLASES = [[5, 'Bus'], [7, 'Camión'], [6, 'Tren'], [2, 'Carro']];
+
+  function control([clave, tipo, , , extra], valor) {
+    const dis = admin ? '' : 'disabled';
+    if (tipo === 'bool') return `<label class="interruptor"><input type="checkbox" data-k="${clave}" ${valor ? 'checked' : ''} ${dis}><span></span></label>`;
+    if (tipo === 'select') return `<select data-k="${clave}" ${dis}>${extra.map(([v, n]) => `<option value="${v}" ${v === valor ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
+    if (tipo === 'modelo') return `<select data-k="${clave}" ${dis}>${modelos.map(m => `<option ${m === valor ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
+    if (tipo === 'clases') return `<div data-k="${clave}" data-tipo="clases" style="display:flex;gap:10px;flex-wrap:wrap">${CLASES.map(([c, n]) =>
+      `<label><input type="checkbox" value="${c}" ${valor.includes(c) ? 'checked' : ''} ${dis}> ${n}</label>`).join('')}</div>`;
+    return `<input type="number" data-k="${clave}" value="${valor}" min="${extra.min}" max="${extra.max}" step="${extra.step}" ${dis} style="width:120px">`;
+  }
+  async function cargarAjustes() {
+    try {
+      const c = await TE.get('/api/config');
+      original = c.ajustes; modelos = c.modelos;
+      $('grupos').innerHTML = GRUPOS.map(([titulo, items]) => `<section class="bloque"><h2>${titulo}</h2>
+        ${items.map(it => `<div class="ajuste"><div><b>${it[2]}</b><div class="desc">${it[3]}</div></div>${control(it, original[it[0]])}</div>`).join('')}</section>`).join('');
+      $('aviso-lectura').classList.toggle('oculto', admin);
+    } catch (e) { TE.error(e); }
+  }
+  function leer() {
+    const d = {};
+    document.querySelectorAll('#grupos [data-k]').forEach(el => {
+      const k = el.dataset.k;
+      if (el.dataset.tipo === 'clases') d[k] = [...el.querySelectorAll('input:checked')].map(i => +i.value);
+      else if (el.type === 'checkbox') d[k] = el.checked;
+      else if (el.type === 'number') d[k] = +el.value;
+      else d[k] = el.value;
+    });
+    return d;
+  }
+  $('btn-guardar').onclick = async () => {
+    const d = leer(), cambios = {};
+    Object.keys(d).forEach(k => { if (JSON.stringify(d[k]) !== JSON.stringify(original[k])) cambios[k] = d[k]; });
+    if (!Object.keys(cambios).length) return TE.toast('No hay cambios para guardar.');
+    try {
+      const r = await TE.api('PUT', '/api/config', cambios);
+      original = r.ajustes;
+      TE.toast(r.camaras_reiniciadas ? 'Cambios guardados. Las cámaras se reiniciaron para cargar el nuevo detector.' : 'Cambios guardados y aplicados.');
+    } catch (e) { TE.error(e); }
+  };
+  $('btn-restaurar').onclick = cargarAjustes;
+
+  // ── usuarios ───────────────────────────────────────────────────
+  let listaUsuarios = [];
+  const ROLES = { admin: 'Administrador', supervisor: 'Supervisor', visor: 'Visor' };
+  async function usuarios() {
+    try {
+      listaUsuarios = await TE.get('/api/usuarios');
+      $('usuarios').innerHTML = listaUsuarios.map(u => `<tr>
+        <td>${TE.esc(u.nombre)}</td><td>${TE.esc(u.usuario)}</td><td>${TE.esc(u.correo)}</td><td>${ROLES[u.rol]}</td>
+        <td>${u.activo ? '<span class="etq verde">Activo</span>' : '<span class="etq gris">Inactivo</span>'}</td>
+        <td>${u.ultimo_acceso ? TE.fecha(u.ultimo_acceso) : 'Nunca'}</td>
+        <td><button class="btn chico" data-u="${u.id}">Editar</button></td></tr>`).join('');
+    } catch (e) { TE.error(e); }
+  }
+  function formUsuario(u) {
+    const m = TE.modal(u ? `Editar ${u.nombre}` : 'Agregar usuario', `
+      <div class="fila-campos">
+        <div class="campo"><label for="u-nombre">Nombre completo</label><input id="u-nombre" type="text" value="${TE.esc(u?.nombre || '')}"></div>
+        <div class="campo"><label for="u-usuario">Usuario</label><input id="u-usuario" type="text" value="${TE.esc(u?.usuario || '')}" ${u ? 'disabled' : ''}></div>
+      </div>
+      <div class="fila-campos">
+        <div class="campo"><label for="u-correo">Correo</label><input id="u-correo" type="email" value="${TE.esc(u?.correo || '')}"></div>
+        <div class="campo"><label for="u-rol">Rol</label><select id="u-rol">${Object.entries(ROLES).map(([k, n]) => `<option value="${k}" ${u?.rol === k ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      </div>
+      <div class="campo"><label for="u-pass">${u ? 'Nueva contraseña (opcional)' : 'Contraseña'}</label><input id="u-pass" type="password" autocomplete="new-password"><span class="ayuda">Mínimo 8 caracteres.</span></div>
+      <label style="display:flex;gap:10px;align-items:center"><span class="interruptor"><input id="u-activo" type="checkbox" ${!u || u.activo ? 'checked' : ''}><span></span></span> Cuenta activa</label>`,
+      { pie: `<button class="btn primario" id="u-guardar">${u ? 'Guardar cambios' : 'Agregar usuario'}</button>` });
+    m.$('#u-guardar').onclick = async () => {
+      const d = { nombre: m.$('#u-nombre').value.trim(), usuario: m.$('#u-usuario').value.trim(), correo: m.$('#u-correo').value.trim(),
+                  rol: m.$('#u-rol').value, password: m.$('#u-pass').value || null, activo: m.$('#u-activo').checked };
+      if (!d.nombre || !d.usuario || !d.correo) return TE.toast('Completa nombre, usuario y correo.', 'critica');
+      try { u ? await TE.api('PUT', `/api/usuarios/${u.id}`, d) : await TE.api('POST', '/api/usuarios', d); m.cerrar(); TE.toast('Usuario guardado.'); usuarios(); }
+      catch (e) { TE.error(e); }
+    };
+  }
+  $('btn-usuario').onclick = () => formUsuario(null);
+  $('usuarios').onclick = (e) => { if (e.target.dataset.u) formUsuario(listaUsuarios.find(u => u.id === +e.target.dataset.u)); };
+
+  // ── registros ──────────────────────────────────────────────────
+  const NIV = { error: '<span class="etq rojo">Error</span>', aviso: '<span class="etq ambar">Aviso</span>', info: '<span class="etq gris">Info</span>' };
+  async function registros() {
+    try {
+      const n = $('log-nivel').value;
+      const [t, a] = await Promise.all([TE.get('/api/logs/tecnicos?limite=300' + (n ? '&nivel=' + n : '')), TE.get('/api/logs/accesos?limite=300')]);
+      $('log-tec').innerHTML = t.map(l => `<tr><td class="num" style="white-space:nowrap">${TE.fecha(l.timestamp)}</td><td>${NIV[l.nivel] || l.nivel}</td><td>${TE.esc(l.origen)}</td><td>${TE.esc(l.mensaje)}</td></tr>`).join('') || '<tr><td colspan="4" class="vacio">Sin registros.</td></tr>';
+      $('log-acc').innerHTML = a.map(l => `<tr><td class="num" style="white-space:nowrap">${TE.fecha(l.timestamp)}</td><td>${TE.esc(l.usuario || '')}</td><td>${TE.esc(l.accion.replaceAll('_', ' '))}</td><td>${TE.esc(l.detalle || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="vacio">Sin registros.</td></tr>';
+    } catch (e) { TE.error(e); }
+  }
+  $('log-nivel').onchange = registros;
+
+  // ── sistema ────────────────────────────────────────────────────
+  async function sistema() {
+    try {
+      const s = await TE.get('/api/sistema');
+      const horas = ((Date.now() / 1000 - s.activo_desde) / 3600);
+      $('sistema').innerHTML = `
+        <dt>Versión</dt><dd>TransmiEye ${s.version}</dd>
+        <dt>Funcionando desde hace</dt><dd>${horas < 1 ? Math.round(horas * 60) + ' min' : horas.toFixed(1) + ' h'}</dd>
+        <dt>Cámaras procesándose</dt><dd>${s.camaras_activas}</dd>
+        <dt>Pantallas conectadas</dt><dd>${s.clientes_ws}</dd>
+        <dt>Procesador</dt><dd>${s.cuda ? 'GPU ' + TE.esc(s.gpu) : 'CPU (no se detectó GPU NVIDIA)'}</dd>
+        <dt>OpenCV</dt><dd>${s.opencv}</dd>
+        <dt>Ultralytics</dt><dd>${s.ultralytics || 'No instalado: se usa detección por movimiento'}</dd>
+        <dt>PyTorch</dt><dd>${s.torch || 'No instalado'}</dd>
+        <dt>Base de datos</dt><dd>${s.base_datos}</dd>
+        <dt>Espacio de evidencias</dt><dd>${s.evidencias_mb} MB · ${s.disco_libre_gb} GB libres</dd>
+        <dt>Última purga</dt><dd>${s.ultima_purga ? new Date(s.ultima_purga).toLocaleString('es-CO') : 'Aún no se ejecuta'}</dd>`;
+    } catch (e) { TE.error(e); }
+  }
+  $('btn-purgar').onclick = async () => {
+    if (!confirm('¿Eliminar ahora las imágenes más antiguas que el periodo de retención?')) return;
+    try { const r = await TE.api('POST', '/api/mantenimiento/purgar'); TE.toast(`Purga completada: ${r.eventos_purgados} eventos purgados.`); sistema(); }
+    catch (e) { TE.error(e); }
+  };
+
+  // ── mi cuenta ──────────────────────────────────────────────────
+  $('btn-pass').onclick = async () => {
+    const nueva = $('p-nueva').value;
+    if (nueva.length < 8) return TE.toast('La nueva contraseña debe tener al menos 8 caracteres.', 'critica');
+    if (nueva !== $('p-rep').value) return TE.toast('Las contraseñas nuevas no coinciden.', 'critica');
+    try {
+      await TE.api('POST', '/api/auth/cambiar-password', { actual: $('p-actual').value, nueva });
+      sessionStorage.removeItem('te_pass_defecto');
+      ['p-actual', 'p-nueva', 'p-rep'].forEach(id => $(id).value = '');
+      TE.toast('Contraseña cambiada.');
+    } catch (e) { TE.error(e); }
+  };
+
+  cargarAjustes();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Ingreso</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body.portada { background: #1E2730; color: #DCE3E9; min-height: 100vh; }
+    .portada-grid {
+      min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(340px, 1fr);
+      background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .escena { padding: 36px 40px 32px 48px; display: flex; flex-direction: column; gap: 22px; justify-content: center; }
+    .marca { display: flex; align-items: center; gap: 14px; }
+    .marca strong { font-family: var(--f-cond); font-size: 30px; color: #fff; line-height: 1; display: block; }
+    .marca span { color: #9AA7B3; font-size: 14.5px; }
+    .monitor { background: #10161C; border: 1px solid #3B4956; border-radius: 10px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.45); max-width: 900px; }
+    .monitor svg { display: block; width: 100%; height: auto; }
+    .leyenda { display: flex; gap: 22px; flex-wrap: wrap; color: #B9C4CE; font-size: 14.5px; max-width: 900px; }
+    .leyenda span { display: inline-flex; align-items: center; gap: 8px; }
+    .leyenda i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+    .titular { font-family: var(--f-cond); font-size: clamp(28px, 3vw, 40px); color: #fff; line-height: 1.12; max-width: 24ch; font-weight: 600; }
+    .lado-form { background: var(--aluminio); color: var(--tinta); display: flex; align-items: center; justify-content: center; padding: 40px 32px; position: relative; }
+    .lado-form::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: var(--rojo); }
+    .lado-form form { width: min(360px, 100%); }
+    .lado-form h1 { font-size: 30px; margin-bottom: 6px; }
+    .lado-form .sub { color: var(--tinta-2); margin-bottom: 22px; }
+    .lado-form .nota { margin-top: 18px; color: var(--tinta-2); font-size: 13.5px; border-top: 1px solid var(--linea); padding-top: 14px; }
+    .btn-ingresar { width: 100%; justify-content: center; padding: 11px; font-size: 16px; background: var(--rojo); border-color: var(--rojo); color: #fff; }
+    .btn-ingresar:hover { background: #9A1A23; border-color: #9A1A23; }
+    @media (max-width: 980px) {
+      .portada-grid { grid-template-columns: 1fr; }
+      .escena { padding: 24px 18px; }
+      .lado-form::before { width: auto; height: 6px; right: 0; bottom: auto; }
+    }
+  </style>
+</head>
+<body class="portada">
+<div class="portada-grid">
+  <section class="escena">
+    <div class="marca">
+      <svg width="46" height="46" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="8" fill="#B3202A"/>
+        <path d="M5 19c4-6.5 8.7-9.7 14-9.7S29 12.5 33 19c-4 6.5-8.7 9.7-14 9.7S9 25.5 5 19z" fill="#fff"/>
+        <circle cx="19" cy="19" r="5.6" fill="#26313B"/><circle cx="21" cy="17" r="1.7" fill="#fff"/></svg>
+      <div><strong>TransmiEye</strong><span>Centro de monitoreo de puertas laterales</span></div>
+    </div>
+    <p class="titular">Detecta a quien entra desde el carril y deja pasar a quien se baja del bus.</p>
+
+    <div class="monitor">
+      <svg id="escena" viewBox="0 0 800 470" role="img" aria-label="Animación: una persona entra por una puerta lateral sin bus y el sistema la marca como evasión; luego llega un bus y sus pasajeros se cuentan como cruces normales.">
+        <defs>
+          <g id="persona"><ellipse rx="11" ry="6.5" fill="#B9C4CE"/><circle r="6" fill="#EEF1F3"/></g>
+          <pattern id="rayas" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="10" fill="#C9D2DA" opacity=".25"/></pattern>
+        </defs>
+        <rect width="800" height="470" fill="#1B232B"/>
+        <!-- Carril -->
+        <rect x="0" y="34" width="800" height="176" fill="#D62828" opacity=".16"/>
+        <rect x="1" y="34" width="798" height="176" fill="none" stroke="#D62828" stroke-width="2"/>
+        <g stroke="#C9D2DA" stroke-width="3" stroke-dasharray="26 22" opacity=".5"><line x1="0" y1="112" x2="800" y2="112"/></g>
+        <text x="14" y="58" fill="#F08A8A" font-family="Barlow, sans-serif" font-size="15" font-weight="600">Carril exclusivo · fuera</text>
+        <!-- Pared de la estación con 4 puertas -->
+        <g id="pared" fill="#8796A3">
+          <rect x="0" y="210" width="150" height="22"/><rect x="210" y="210" width="120" height="22"/>
+          <rect x="390" y="210" width="120" height="22"/><rect x="570" y="210" width="120" height="22"/><rect x="750" y="210" width="50" height="22"/>
+        </g>
+        <g fill="url(#rayas)"><rect x="0" y="210" width="150" height="22"/><rect x="210" y="210" width="120" height="22"/>
+          <rect x="390" y="210" width="120" height="22"/><rect x="570" y="210" width="120" height="22"/><rect x="750" y="210" width="50" height="22"/></g>
+        <g fill="#0E1318"><rect x="150" y="210" width="60" height="22"/><rect x="330" y="210" width="60" height="22"/>
+          <rect x="510" y="210" width="60" height="22"/><rect x="690" y="210" width="60" height="22"/></g>
+        <!-- Plataforma -->
+        <rect x="0" y="232" width="800" height="238" fill="#4F9A2A" opacity=".14"/>
+        <rect x="1" y="232" width="798" height="237" fill="none" stroke="#4F9A2A" stroke-width="2"/>
+        <text x="14" y="455" fill="#9FD07A" font-family="Barlow, sans-serif" font-size="15" font-weight="600">Plataforma · dentro</text>
+        <!-- Líneas de puerta con sentido de ingreso -->
+        <g font-family="Barlow, sans-serif" font-size="12" font-weight="600">
+          <g transform="translate(180 221)"><line x1="-30" x2="30" stroke="#F2B705" stroke-width="4"/><line y1="-14" y2="0" stroke="#D62828" stroke-width="4"/><path d="M0 0v16" stroke="#4F9A2A" stroke-width="4"/><path d="M-7 14h14l-7 10z" fill="#4F9A2A"/><text x="10" y="30" fill="#9FD07A">P1</text></g>
+          <g transform="translate(360 221)"><line id="puerta2" x1="-30" x2="30" stroke="#F2B705" stroke-width="4">
+              <animate attributeName="stroke" values="#F2B705;#FF3B3B;#F2B705" keyTimes="0;0.335;0.56" dur="14s" calcMode="discrete" repeatCount="indefinite"/>
+              <animate attributeName="stroke-width" values="4;7;4" keyTimes="0;0.335;0.56" dur="14s" calcMode="discrete" repeatCount="indefinite"/></line>
+            <line y1="-14" y2="0" stroke="#D62828" stroke-width="4"/><path d="M0 0v16" stroke="#4F9A2A" stroke-width="4"/><path d="M-7 14h14l-7 10z" fill="#4F9A2A"/><text x="10" y="30" fill="#9FD07A">P2</text></g>
+          <g transform="translate(540 221)"><line x1="-30" x2="30" stroke="#F2B705" stroke-width="4"/><line y1="-14" y2="0" stroke="#D62828" stroke-width="4"/><path d="M0 0v16" stroke="#4F9A2A" stroke-width="4"/><path d="M-7 14h14l-7 10z" fill="#4F9A2A"/><text x="10" y="30" fill="#9FD07A">P3</text></g>
+          <g transform="translate(720 221)"><line x1="-30" x2="30" stroke="#F2B705" stroke-width="4"/><line y1="-14" y2="0" stroke="#D62828" stroke-width="4"/><path d="M0 0v16" stroke="#4F9A2A" stroke-width="4"/><path d="M-7 14h14l-7 10z" fill="#4F9A2A"/><text x="10" y="30" fill="#9FD07A">P4</text></g>
+        </g>
+
+        <!-- Personas en la plataforma -->
+        <g transform="translate(110 330)"><use href="#persona"/><animateMotion dur="14s" repeatCount="indefinite" path="M0 0 L60 20 L120 0 L60 -20 Z"/></g>
+        <g transform="translate(620 380)"><use href="#persona"/><animateMotion dur="14s" repeatCount="indefinite" path="M0 0 L-90 10 L-40 -30 Z"/></g>
+        <g transform="translate(470 300)"><use href="#persona"/><animateMotion dur="14s" repeatCount="indefinite" path="M0 0 L20 50 L-30 40 Z"/></g>
+
+        <!-- Persona que camina por el carril y entra por la puerta 2 -->
+        <g opacity="0">
+          <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.04;0.56;0.6;1" dur="14s" repeatCount="indefinite"/>
+          <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.05;0.40;1"
+                         path="M40 185 L330 190 L360 205 L360 240 L362 300"/>
+          <use href="#persona"/>
+          <rect x="-18" y="-18" width="36" height="36" fill="none" stroke-width="2.5" stroke="#F2F4F6">
+            <animate attributeName="stroke" values="#F2F4F6;#FF3B3B;#F2F4F6" keyTimes="0;0.345;0.6" dur="14s" calcMode="discrete" repeatCount="indefinite"/>
+            <animate attributeName="stroke-width" values="2.5;4.5;2.5" keyTimes="0;0.345;0.6" dur="14s" calcMode="discrete" repeatCount="indefinite"/>
+          </rect>
+          <g font-family="Barlow, sans-serif" font-size="12.5" font-weight="700">
+            <g><animate attributeName="opacity" values="1;0;1" keyTimes="0;0.345;0.6" dur="14s" calcMode="discrete" repeatCount="indefinite"/>
+              <rect x="-18" y="-36" width="34" height="17" fill="#F2F4F6"/><text x="-14" y="-23" fill="#1B232B">#17</text></g>
+            <g opacity="0"><animate attributeName="opacity" values="0;1;0" keyTimes="0;0.345;0.6" dur="14s" calcMode="discrete" repeatCount="indefinite"/>
+              <rect x="-18" y="-36" width="96" height="17" fill="#FF3B3B"/><text x="-14" y="-23" fill="#fff">#17 evasión</text></g>
+          </g>
+        </g>
+
+        <!-- Bus que llega, se detiene en las puertas 2 y 3 y se va -->
+        <g transform="translate(-460 0)">
+          <animateTransform attributeName="transform" type="translate" values="-460 0;-460 0;250 0;250 0;900 0"
+                            keyTimes="0;0.56;0.66;0.86;1" calcMode="spline" keySplines="0 0 1 1;0.2 0 0.2 1;0 0 1 1;0.6 0 1 1" dur="14s" repeatCount="indefinite"/>
+          <rect x="0" y="126" width="380" height="74" rx="12" fill="#B3202A"/>
+          <rect x="190" y="126" width="6" height="74" fill="#7E1018"/>
+          <g fill="#F3D2D4" opacity=".85"><rect x="18" y="138" width="44" height="18" rx="3"/><rect x="72" y="138" width="44" height="18" rx="3"/><rect x="126" y="138" width="44" height="18" rx="3"/>
+            <rect x="214" y="138" width="44" height="18" rx="3"/><rect x="268" y="138" width="44" height="18" rx="3"/><rect x="322" y="138" width="44" height="18" rx="3"/></g>
+          <rect x="-3" y="122" width="386" height="82" rx="14" fill="none" stroke="#FFD60A" stroke-width="2.5"/>
+          <rect x="300" y="104" width="86" height="17" fill="#FFD60A"/><text x="305" y="117" font-family="Barlow, sans-serif" font-size="12.5" font-weight="700" fill="#1B232B">bus 0.94</text>
+        </g>
+
+        <!-- Pasajeros que bajan del bus: cruces normales -->
+        <g opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.66;0.67;0.84;0.87;1" dur="14s" repeatCount="indefinite"/>
+          <g transform="translate(380 180)"><animateMotion dur="14s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.68;0.8;1" calcMode="linear" path="M0 0 L-20 130"/>
+            <use href="#persona"/><rect x="-18" y="-18" width="36" height="36" fill="none" stroke="#7BC043" stroke-width="2.5"/><rect x="-18" y="-36" width="64" height="17" fill="#7BC043"/><text x="-14" y="-23" font-family="Barlow, sans-serif" font-size="12.5" font-weight="700" fill="#10161C">con bus</text></g>
+          <g transform="translate(540 182)"><animateMotion dur="14s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7;0.82;1" calcMode="linear" path="M0 0 L25 150"/>
+            <use href="#persona"/><rect x="-18" y="-18" width="36" height="36" fill="none" stroke="#7BC043" stroke-width="2.5"/><rect x="-18" y="-36" width="64" height="17" fill="#7BC043"/><text x="-14" y="-23" font-family="Barlow, sans-serif" font-size="12.5" font-weight="700" fill="#10161C">con bus</text></g>
+        </g>
+
+        <!-- Barra de la cámara y contadores -->
+        <rect width="800" height="28" fill="#10161C" opacity=".92"/>
+        <circle cx="16" cy="14" r="5" fill="#FF3B3B"><animate attributeName="opacity" values="1;.25;1" dur="1.6s" repeatCount="indefinite"/></circle>
+        <text x="28" y="19" fill="#E8EBEE" font-family="Barlow, sans-serif" font-size="13.5" font-weight="600">CAM-HER-01  Héroes, vagón 2</text>
+        <text id="reloj" x="786" y="19" text-anchor="end" fill="#B9C4CE" font-family="Barlow, sans-serif" font-size="13.5"></text>
+        <g font-family="Barlow, sans-serif" font-size="13" fill="#E8EBEE">
+          <rect x="560" y="36" width="232" height="24" rx="4" fill="#10161C" opacity=".85"/>
+          <text x="570" y="53">Ingresos irregulares</text>
+          <text x="696" y="53" font-weight="700" fill="#FF6B6B">0<animate attributeName="opacity" values="1;0;1" keyTimes="0;0.345;0.99" dur="14s" calcMode="discrete" repeatCount="indefinite"/></text>
+          <text x="696" y="53" font-weight="700" fill="#FF6B6B" opacity="0">1<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.345;0.99" dur="14s" calcMode="discrete" repeatCount="indefinite"/></text>
+          <text x="712" y="53">Con bus</text>
+          <text x="766" y="53" font-weight="700" fill="#9FD07A">0<animate attributeName="opacity" values="1;0;1" keyTimes="0;0.79;0.99" dur="14s" calcMode="discrete" repeatCount="indefinite"/></text>
+          <text x="766" y="53" font-weight="700" fill="#9FD07A" opacity="0">2<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.79;0.99" dur="14s" calcMode="discrete" repeatCount="indefinite"/></text>
+        </g>
+        <!-- Alerta -->
+        <g opacity="0" font-family="Barlow, sans-serif">
+          <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.34;0.36;0.56;0.58;1" dur="14s" repeatCount="indefinite"/>
+          <rect x="470" y="262" width="310" height="62" rx="6" fill="#B3202A"/>
+          <text x="486" y="287" fill="#fff" font-size="16" font-weight="700">Ingreso por puerta lateral</text>
+          <text x="486" y="309" fill="#F8D9DB" font-size="13.5">Puerta 2 sin bus · alerta crítica enviada</text>
+        </g>
+      </svg>
+    </div>
+    <div class="leyenda" aria-hidden="true">
+      <span><i style="background:#D62828"></i>Carril, fuera</span>
+      <span><i style="background:#4F9A2A"></i>Plataforma, dentro</span>
+      <span><i style="background:#F2B705"></i>Puerta con sentido de ingreso</span>
+      <span><i style="background:#FFD60A;border-radius:50%"></i>Bus en la puerta: cruce normal</span>
+    </div>
+  </section>
+
+  <section class="lado-form">
+    <form id="form" novalidate>
+      <h1>Ingreso de operadores</h1>
+      <p class="sub">Accede al monitoreo en vivo, las alertas y la evidencia.</p>
+      <div class="error" id="error" role="alert"></div>
+      <div class="campo"><label for="usuario">Usuario</label><input id="usuario" type="text" autocomplete="username" required></div>
+      <div class="campo"><label for="pass">Contraseña</label><input id="pass" type="password" autocomplete="current-password" required></div>
+      <button class="btn btn-ingresar" type="submit">Ingresar</button>
+      <p class="nota">Primera vez: usuario <b>admin</b>, contraseña <b>admin123</b>. Cámbiala en Configuración después de ingresar.<br>
+        Las imágenes de evidencia se anonimizan antes de guardarse (Ley 1581 de 2012).</p>
+    </form>
+  </section>
+</div>
+<script>
+  // Reloj de la "cámara"
+  const reloj = document.getElementById('reloj');
+  const tic = () => { reloj.textContent = new Date().toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); };
+  tic(); setInterval(tic, 1000);
+  // Movimiento reducido: congelar la escena en el momento de la detección
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const svg = document.getElementById('escena'); svg.pauseAnimations(); svg.setCurrentTime(5.2);
+  }
+
+  const motivo = new URLSearchParams(location.search).get('motivo');
+  if (motivo) document.getElementById('error').textContent = motivo;
+  if (localStorage.getItem('te_token') && !motivo) location.href = 'panel.html';
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = document.getElementById('error'); err.textContent = '';
+    const usuario = document.getElementById('usuario').value.trim(), password = document.getElementById('pass').value;
+    if (!usuario || !password) { err.textContent = 'Escribe tu usuario y contraseña.'; return; }
+    const b = e.submitter; b.disabled = true; b.textContent = 'Ingresando…';
+    try {
+      const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario, password }) });
+      const d = await r.json();
+      if (!r.ok) { err.textContent = d.detail || 'No se pudo ingresar.'; return; }
+      localStorage.setItem('te_token', d.token);
+      localStorage.setItem('te_usuario', JSON.stringify(d.usuario));
+      sessionStorage.setItem('te_pass_defecto', d.password_por_defecto ? '1' : '');
+      location.href = 'panel.html';
+    } catch (ex) { err.textContent = 'No hay conexión con el servidor. Verifica que run.py esté en ejecución.'; }
+    finally { b.disabled = false; b.textContent = 'Ingresar'; }
+  });
+</script>
+</body>
+</html>

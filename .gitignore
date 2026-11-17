@@ -1,0 +1,7 @@
+data/
+backend/.venv/
+__pycache__/
+videos/*.mp4
+videos/*.avi
+videos/*.mkv
+videos/*.mov

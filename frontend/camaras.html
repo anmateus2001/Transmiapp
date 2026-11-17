@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Cámaras</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera">
+    <div><h1>Cámaras</h1><p>Video procesado en vivo. Rojo es el carril, verde la plataforma y azul la bahía del bus. Las flechas sobre las puertas marcan el sentido que cuenta como ingreso, y el punto bajo cada persona indica dónde están sus pies.</p></div>
+    <div class="acciones"><button class="btn primario" id="btn-nueva" data-rol="admin">Agregar cámara</button></div>
+  </div>
+  <div class="mosaico" id="mosaico"></div>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('camaras.html')) {
+  const $ = (id) => document.getElementById(id);
+  let camaras = [], estaciones = [];
+  const ESTADOS = { en_linea: 'En línea', conectando: 'Conectando', reconectando: 'Reconectando', iniciando: 'Iniciando', detenida: 'Detenida' };
+
+  // ── Mosaico ────────────────────────────────────────────────────
+  function tarjeta(c) {
+    return `<article class="camara" id="cam-${c.id}">
+      <div class="video"><img data-cam="${c.id}" alt="Video procesado de ${TE.esc(c.codigo)}" title="Ampliar"></div>
+      <div class="datos">
+        <div class="titulo"><strong>${TE.esc(c.codigo)}</strong><span class="estado-cam" data-estado></span></div>
+        <div class="meta">${TE.esc(c.estacion)}${c.ubicacion ? ' · ' + TE.esc(c.ubicacion) : ''} · vista desde ${c.vista === 'exterior' ? 'el carril' : 'la plataforma'}</div>
+        <div class="lecturas" data-lecturas></div>
+        <div data-aviso></div>
+        <div class="botones">
+          <button class="btn chico" data-acc="ampliar">Ampliar</button>
+          <button class="btn chico" data-acc="zonas" ${TE.puede('admin') ? '' : 'hidden'}>Zonas y puertas</button>
+          <button class="btn chico" data-acc="editar" ${TE.puede('admin') ? '' : 'hidden'}>Editar</button>
+          <button class="btn chico" data-acc="alternar" ${TE.puede('supervisor') ? '' : 'hidden'}>${c.activa ? 'Detener' : 'Iniciar'}</button>
+        </div>
+      </div></article>`;
+  }
+
+  function actualizarDatos() {
+    camaras.forEach(c => {
+      const el = $('cam-' + c.id); if (!el) return;
+      const r = c.runtime || {}, a = r.analisis || {};
+      const est = el.querySelector('[data-estado]');
+      est.className = 'estado-cam ' + (r.estado || 'detenida');
+      est.innerHTML = `<i></i>${ESTADOS[r.estado] || 'Detenida'}`;
+      el.querySelector('[data-lecturas]').innerHTML = r.estado === 'en_linea' ? `
+        <span><b>${r.fps}</b> FPS</span><span><b>${Math.round(r.latencia_ms)}</b> ms</span>
+        <span><b>${a.personas ?? 0}</b> personas</span><span><b>${a.en_exterior ?? 0}</b> en carril</span>
+        <span><b>${a.en_interior ?? 0}</b> en plataforma</span><span>${a.bus_presente ? '<b>Bus en la puerta</b>' : 'Sin bus'}</span>
+        ${a.contadores ? `<span style="flex-basis:100%">Desde que inició: <b style="color:var(--rojo)">${a.contadores.ingresos}</b> ingresos irregulares,
+          <b>${a.contadores.salidas}</b> salidas, <b>${a.contadores.con_bus}</b> cruces con bus</span>` : ''}` : '';
+      let aviso = '';
+      if (r.error && r.estado !== 'en_linea') aviso = `No se pudo conectar: ${TE.esc(r.error)}`;
+      else if (r.estado === 'en_linea' && !a.zonas) aviso = 'Solo detecta personas: dibuja las zonas de carril y plataforma o una línea de puerta para activar las alertas.';
+      else if (r.motor && r.motor.startsWith('Movimiento')) aviso = 'Usando detección por movimiento (YOLO no disponible). Revisa los registros en Configuración.';
+      el.querySelector('[data-aviso]').innerHTML = aviso ? `<div class="aviso-cam">${aviso}</div>` : '';
+    });
+  }
+
+  async function cargar() {
+    try {
+      const nuevas = await TE.get('/api/camaras');
+      const cambio = nuevas.map(c => c.id + c.codigo + c.activa + c.estacion + c.vista).join() !== camaras.map(c => c.id + c.codigo + c.activa + c.estacion + c.vista).join();
+      camaras = nuevas;
+      if (cambio) {
+        $('mosaico').innerHTML = camaras.length ? camaras.map(tarjeta).join('') : `
+          <div class="bloque vacio" style="grid-column:1/-1"><strong>No hay cámaras registradas</strong>
+          Agrega una webcam (índice 0), una cámara IP con su URL RTSP o un video de prueba de la carpeta videos/.</div>`;
+      }
+      actualizarDatos();
+    } catch (e) { TE.error(e); }
+  }
+
+  function refrescarCuadros() {
+    document.querySelectorAll('img[data-cam]').forEach(img => {
+      if (img.dataset.cargando) return;
+      img.dataset.cargando = 1;
+      const n = new Image();
+      n.onload = () => { img.src = n.src; delete img.dataset.cargando; };
+      n.onerror = () => { delete img.dataset.cargando; };
+      n.src = TE.conToken(`/api/camaras/${img.dataset.cam}/frame.jpg?t=${Date.now()}`);
+    });
+  }
+
+  $('mosaico').addEventListener('click', async (e) => {
+    const art = e.target.closest('.camara'); if (!art) return;
+    const c = camaras.find(x => 'cam-' + x.id === art.id);
+    const acc = e.target.dataset.acc || (e.target.tagName === 'IMG' ? 'ampliar' : null);
+    if (acc === 'ampliar') ampliar(c);
+    if (acc === 'zonas') editorZonas(c);
+    if (acc === 'editar') formulario(c);
+    if (acc === 'alternar') {
+      e.target.disabled = true;
+      try { await TE.api('POST', `/api/camaras/${c.id}/${c.activa ? 'detener' : 'iniciar'}`); TE.toast(c.activa ? `${c.codigo} detenida.` : `${c.codigo} iniciada.`); }
+      catch (err) { TE.error(err); }
+      camaras = []; cargar();
+    }
+  });
+
+  // ── Vista ampliada (MJPEG) ─────────────────────────────────────
+  function ampliar(c) {
+    let timer;
+    const m = TE.modal(`${c.codigo} · ${c.estacion}`, `
+      <div class="visor"><img id="stream" src="${TE.conToken(`/api/camaras/${c.id}/stream`)}" alt="Video en vivo de ${TE.esc(c.codigo)}"></div>
+      <div class="lecturas" id="lect-amp" style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--tinta-2)"></div>`,
+      { ancho: true, alCerrar: () => { clearInterval(timer); m.$('#stream').src = ''; } });
+    const lect = async () => {
+      try {
+        const d = await TE.get(`/api/camaras/${c.id}`), r = d.runtime, a = r.analisis || {};
+        m.$('#lect-amp').innerHTML = `<span>${TE.esc(r.motor || '')}</span><span>${r.resolucion || ''}</span>
+          <span><b>${r.fps}</b> FPS</span><span><b>${Math.round(r.latencia_ms)}</b> ms por cuadro</span>
+          <span><b>${a.personas ?? 0}</b> personas</span><span><b>${r.eventos_sesion}</b> eventos desde que inició</span>`;
+      } catch (e) {}
+    };
+    lect(); timer = setInterval(lect, 1500);
+  }
+
+  // ── Alta / edición ─────────────────────────────────────────────
+  async function formulario(c) {
+    try { estaciones = await TE.get('/api/estaciones'); } catch (e) { return TE.error(e); }
+    let videos = [];
+    try { videos = await TE.get('/api/videos'); } catch (e) {}
+    const f = c ? c.fuente : '0';
+    const tipo = /^\d+$/.test(f) ? 'usb' : f.includes('://') ? 'ip' : 'archivo';
+    const m = TE.modal(c ? `Editar ${c.codigo}` : 'Agregar cámara', `
+      <div class="fila-campos">
+        <div class="campo"><label for="f-codigo">Código</label><input id="f-codigo" type="text" value="${TE.esc(c?.codigo || '')}" placeholder="CAM-HER-01"></div>
+        <div class="campo"><label for="f-est">Estación</label><select id="f-est">${estaciones.map(e => `<option value="${e.id}" ${c?.estacion_id === e.id ? 'selected' : ''}>${TE.esc(e.nombre)}</option>`).join('')}</select></div>
+      </div>
+      <div class="campo"><label>Origen del video</label>
+        <div class="segmentos" id="f-tipo">
+          <button type="button" data-t="usb">Cámara USB</button><button type="button" data-t="ip">Cámara IP</button><button type="button" data-t="archivo">Archivo de video</button>
+        </div></div>
+      <div class="campo" data-panel="usb"><label for="f-usb">Número de cámara</label><input id="f-usb" type="number" min="0" max="20" value="${tipo === 'usb' ? f : 0}">
+        <span class="ayuda">0 es la primera cámara conectada al equipo, 1 la segunda, etc.</span></div>
+      <div class="campo" data-panel="ip"><label for="f-url">URL del stream</label><input id="f-url" type="text" value="${tipo === 'ip' ? TE.esc(f) : ''}" placeholder="rtsp://usuario:clave@192.168.1.64:554/Streaming/Channels/101">
+        <span class="ayuda">RTSP de cámaras Hikvision, Dahua, etc., o una URL http de MJPEG (por ejemplo la app IP Webcam en un celular: http://IP:8080/video).</span></div>
+      <div class="campo" data-panel="archivo"><label for="f-video">Video</label>
+        <select id="f-video">${videos.map(v => `<option value="videos/${TE.esc(v.nombre)}" ${f === 'videos/' + v.nombre ? 'selected' : ''}>${TE.esc(v.nombre)} (${v.mb} MB)</option>`).join('') || '<option value="">No hay videos en la carpeta videos/</option>'}</select>
+        <span class="ayuda">Se reproduce en bucle a velocidad real, como una cámara en vivo.</span>
+        <label class="btn chico" style="align-self:flex-start;margin-top:4px">Subir un video<input id="f-subir" type="file" accept="video/*" hidden></label></div>
+      <div class="fila-campos">
+        <div class="campo"><label for="f-ubic">Ubicación en la estación</label><input id="f-ubic" type="text" value="${TE.esc(c?.ubicacion || '')}" placeholder="Vagón 2, puertas 3 y 4"></div>
+        <div class="campo"><label for="f-vista">La cámara mira desde</label><select id="f-vista">
+          <option value="interior" ${c?.vista !== 'exterior' ? 'selected' : ''}>La plataforma (dentro)</option>
+          <option value="exterior" ${c?.vista === 'exterior' ? 'selected' : ''}>El carril o andén opuesto (fuera)</option></select></div>
+      </div>
+      <label style="display:flex;gap:10px;align-items:center"><span class="interruptor"><input id="f-activa" type="checkbox" ${!c || c.activa ? 'checked' : ''}><span></span></span> Procesar esta cámara</label>
+      <div id="f-prueba" style="margin-top:14px"></div>`, {
+      pie: `${c ? '<button class="btn peligro" id="f-borrar" style="margin-right:auto">Eliminar</button>' : ''}
+            <button class="btn" id="f-probar">Probar conexión</button><button class="btn primario" id="f-guardar">${c ? 'Guardar cambios' : 'Agregar cámara'}</button>`,
+    });
+    let tipoSel = tipo;
+    const mostrarTipo = (t) => {
+      tipoSel = t;
+      m.el.querySelectorAll('#f-tipo button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+      m.el.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('oculto', p.dataset.panel !== t));
+    };
+    mostrarTipo(tipo);
+    m.$('#f-tipo').onclick = (e) => e.target.dataset.t && mostrarTipo(e.target.dataset.t);
+    const fuente = () => tipoSel === 'usb' ? String(m.$('#f-usb').value || 0) : tipoSel === 'ip' ? m.$('#f-url').value.trim() : m.$('#f-video').value;
+
+    m.$('#f-subir').onchange = async (e) => {
+      const archivo = e.target.files[0]; if (!archivo) return;
+      const fd = new FormData(); fd.append('archivo', archivo);
+      m.$('#f-prueba').innerHTML = `<div class="banda azul">Subiendo ${TE.esc(archivo.name)}…</div>`;
+      try {
+        const r = await TE.api('POST', '/api/videos', fd);
+        m.$('#f-video').insertAdjacentHTML('afterbegin', `<option value="${TE.esc(r.fuente)}" selected>${TE.esc(r.nombre)}</option>`);
+        m.$('#f-video').value = r.fuente;
+        m.$('#f-prueba').innerHTML = `<div class="banda azul">Video subido: ${TE.esc(r.nombre)}</div>`;
+      } catch (err) { m.$('#f-prueba').innerHTML = `<div class="banda rojo">${TE.esc(err.message)}</div>`; }
+    };
+    m.$('#f-probar').onclick = async () => {
+      m.$('#f-prueba').innerHTML = '<div class="banda azul">Probando conexión…</div>';
+      try {
+        const r = await TE.api('POST', '/api/camaras/probar-fuente', { fuente: fuente() });
+        m.$('#f-prueba').innerHTML = r.ok ? `<div class="banda azul">Conexión correcta: ${r.resolucion}, ${r.fps} FPS (${r.tipo}).</div>`
+          : `<div class="banda rojo">${TE.esc(r.error)}</div>`;
+      } catch (err) { m.$('#f-prueba').innerHTML = `<div class="banda rojo">${TE.esc(err.message)}</div>`; }
+    };
+    m.$('#f-guardar').onclick = async () => {
+      const datos = { codigo_camara: m.$('#f-codigo').value.trim(), estacion_id: +m.$('#f-est').value, fuente: fuente(),
+                      ubicacion: m.$('#f-ubic').value.trim(), vista: m.$('#f-vista').value, activa: m.$('#f-activa').checked };
+      if (!datos.codigo_camara) return TE.toast('Escribe un código para la cámara.', 'critica');
+      if (!datos.fuente) return TE.toast('Indica el origen del video.', 'critica');
+      m.$('#f-guardar').disabled = true;
+      try {
+        const r = c ? await TE.api('PUT', `/api/camaras/${c.id}`, datos) : await TE.api('POST', '/api/camaras', datos);
+        m.cerrar(); camaras = []; await cargar();
+        TE.toast(c ? 'Cambios guardados.' : 'Cámara agregada. Ahora dibuja sus zonas.');
+        if (!c) { const nueva = camaras.find(x => x.id === r.id); if (nueva) editorZonas(nueva); }
+      } catch (err) { TE.error(err); m.$('#f-guardar').disabled = false; }
+    };
+    m.$('#f-borrar')?.addEventListener('click', async () => {
+      if (!confirm(`¿Eliminar la cámara ${c.codigo}? Esta acción no se puede deshacer.`)) return;
+      try { await TE.api('DELETE', `/api/camaras/${c.id}`); m.cerrar(); camaras = []; cargar(); TE.toast('Cámara eliminada.'); }
+      catch (err) { TE.error(err); }
+    });
+  }
+  $('btn-nueva').onclick = () => formulario(null);
+
+  // ── Editor de zonas y líneas de puerta ─────────────────────────
+  const ZONAS = {
+    exterior: { nombre: 'Carril (fuera)', color: '#D62828', ayuda: 'La vía frente a las puertas, por donde pasa el bus. Debe llegar hasta el borde de la puerta.' },
+    interior: { nombre: 'Plataforma (dentro)', color: '#4F9A2A', ayuda: 'El piso de la estación justo detrás de las puertas.' },
+    bahia: { nombre: 'Bahía del bus (opcional)', color: '#1E73BE', ayuda: 'Donde queda el bus detenido. Si la omites, se usa el carril.' },
+    puertas: { nombre: 'Línea de puerta', color: '#F2B705', ayuda: 'Dos clics sobre el umbral de cada puerta. La flecha marca el sentido que cuenta como ingreso. Detecta incluso cruces muy rápidos.' },
+  };
+
+  function editorZonas(c) {
+    const roi = JSON.parse(JSON.stringify(c.roi || {}));
+    Object.keys(ZONAS).forEach(k => roi[k] = roi[k] || []);
+    let tipo = 'exterior', puntos = [], img = new Image(), sucio = false;
+    const m = TE.modal(`Zonas y puertas de ${c.codigo}`, `
+      <div class="editor">
+        <div>
+          <div class="lienzo-envoltura"><canvas id="lienzo" width="960" height="540" aria-label="Imagen de la cámara para dibujar zonas"></canvas></div>
+          <p style="margin-top:10px;color:var(--tinta-2);font-size:14px" id="z-instruccion"></p>
+        </div>
+        <div class="herramientas">
+          ${Object.entries(ZONAS).map(([k, z]) => `<div class="zona-opcion" data-z="${k}" tabindex="0" role="button">
+            <span class="muestra" style="background:${z.color}"></span><div><b>${z.nombre}</b> <span data-n="${k}"></span><small>${z.ayuda}</small></div></div>`).join('')}
+          <div id="z-puertas"></div>
+          <div class="acciones" style="margin-top:12px">
+            <button class="btn chico" id="z-deshacer">Quitar último</button>
+            <button class="btn chico" id="z-borrar-tipo">Borrar este tipo</button>
+            <button class="btn chico" id="z-recargar">Nueva imagen</button>
+          </div>
+          <div class="banda azul" style="margin-top:14px;font-size:13px">Se cuenta un ingreso cuando los pies de una persona pasan del rojo al verde, o cruzan una línea de puerta en el sentido de la flecha, sin un bus en la puerta. Lo más preciso es usar las dos cosas: zonas y una línea por puerta.</div>
+        </div>
+      </div>`, {
+      ancho: true,
+      pie: '<button class="btn" id="z-cancelar">Cancelar</button><button class="btn primario" id="z-guardar">Guardar</button>',
+      alCerrar: () => document.removeEventListener('keydown', tecla, true),
+    });
+    const cv = m.$('#lienzo'), ctx = cv.getContext('2d');
+    const px = ([x, y]) => [x * cv.width, y * cv.height];
+    const escala = () => cv.width / 960;
+
+    // Producto cruz en píxeles: > 0 significa lado de la plataforma (derecha del trazo a→b en pantalla)
+    function lado(pu, q) {
+      const [ax, ay] = px(pu.a), [bx, by] = px(pu.b), [qx, qy] = px(q);
+      return (bx - ax) * (qy - ay) - (by - ay) * (qx - ax);
+    }
+    const centroide = (polis) => { const pts = polis.flat(); return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length]; };
+    function orientar(pu) {
+      const medio = [(pu.a[0] + pu.b[0]) / 2, (pu.a[1] + pu.b[1]) / 2];
+      let invertir;
+      if (roi.interior.length) invertir = lado(pu, centroide(roi.interior)) < 0;
+      else if (roi.exterior.length) invertir = lado(pu, centroide(roi.exterior)) > 0;
+      else invertir = lado(pu, [medio[0], medio[1] + 0.1]) < 0;    // por defecto hacia abajo
+      if (invertir) [pu.a, pu.b] = [pu.b, pu.a];
+      return pu;
+    }
+
+    function flecha(pu, i) {
+      const [ax, ay] = px(pu.a), [bx, by] = px(pu.b), k = escala();
+      const largo = Math.hypot(bx - ax, by - ay), nx = -(by - ay) / largo, ny = (bx - ax) / largo;
+      const cx = (ax + bx) / 2, cy = (ay + by) / 2, L = Math.min(Math.max(largo * 0.35, 30 * k), 90 * k);
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 9 * k; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.lineWidth = 5 * k; ctx.strokeStyle = ZONAS.puertas.color; ctx.stroke();
+      ctx.lineWidth = 5 * k; ctx.strokeStyle = '#D62828'; ctx.beginPath(); ctx.moveTo(cx - nx * L * 0.7, cy - ny * L * 0.7); ctx.lineTo(cx, cy); ctx.stroke();
+      const hx = cx + nx * L, hy = cy + ny * L;
+      ctx.strokeStyle = '#4F9A2A'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+      const ang = Math.atan2(ny, nx), t = 16 * k;
+      ctx.fillStyle = '#4F9A2A'; ctx.beginPath(); ctx.moveTo(hx + Math.cos(ang) * t, hy + Math.sin(ang) * t);
+      ctx.lineTo(hx + Math.cos(ang + 2.4) * t, hy + Math.sin(ang + 2.4) * t); ctx.lineTo(hx + Math.cos(ang - 2.4) * t, hy + Math.sin(ang - 2.4) * t); ctx.fill();
+      ctx.font = `600 ${15 * k}px Barlow, sans-serif`; const txt = `P${i + 1} ingreso`, w = ctx.measureText(txt).width;
+      ctx.fillStyle = 'rgba(30,60,30,.88)'; ctx.fillRect(hx + 8 * k, hy - 11 * k, w + 10 * k, 20 * k);
+      ctx.fillStyle = '#fff'; ctx.fillText(txt, hx + 13 * k, hy + 4 * k);
+    }
+
+    function dibujar() {
+      if (img.naturalWidth) ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      else { ctx.fillStyle = '#1B232B'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.fillStyle = '#ccc'; ctx.font = '18px Barlow, sans-serif'; ctx.fillText('Cargando imagen de la cámara…', 30, 40); }
+      for (const k of ['bahia', 'exterior', 'interior']) {
+        for (const p of roi[k]) {
+          ctx.beginPath(); p.forEach((q, i) => { const [x, y] = px(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath();
+          ctx.globalAlpha = 0.25; ctx.fillStyle = ZONAS[k].color; ctx.fill(); ctx.globalAlpha = 1;
+          ctx.lineWidth = 3 * escala(); ctx.strokeStyle = ZONAS[k].color; ctx.stroke();
+        }
+      }
+      roi.puertas.forEach(flecha);
+      if (puntos.length) {
+        ctx.beginPath(); puntos.forEach((q, i) => { const [x, y] = px(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+        ctx.lineWidth = 3 * escala(); ctx.setLineDash([8, 6]); ctx.strokeStyle = ZONAS[tipo].color; ctx.stroke(); ctx.setLineDash([]);
+        puntos.forEach((q, i) => { const [x, y] = px(q); ctx.beginPath(); ctx.arc(x, y, (i ? 5 : 8) * escala(), 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = ZONAS[tipo].color; ctx.stroke(); });
+      }
+      m.el.querySelectorAll('.zona-opcion').forEach(o => o.classList.toggle('on', o.dataset.z === tipo));
+      Object.keys(ZONAS).forEach(k => { m.$(`[data-n="${k}"]`).textContent = roi[k].length ? `(${roi[k].length})` : ''; });
+      m.$('#z-instruccion').textContent = tipo === 'puertas'
+        ? 'Haz clic en un extremo del umbral de la puerta y luego en el otro. La flecha apunta hacia la plataforma automáticamente; si queda al revés, usa «Invertir».'
+        : 'Haz clic para poner los vértices. Cierra el polígono con un clic sobre el primer punto, doble clic o Enter. Escape cancela. Puedes dibujar varios polígonos por tipo.';
+      m.$('#z-puertas').innerHTML = roi.puertas.length ? `<div style="margin:4px 0 8px">${roi.puertas.map((_, i) => `
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="min-width:30px">P${i + 1}</b>
+        <button class="btn chico" data-inv="${i}">Invertir sentido</button><button class="btn chico texto" data-del="${i}">Quitar</button></div>`).join('')}</div>` : '';
+    }
+    function cargarImagen() {
+      img = new Image();
+      img.onload = () => { cv.width = img.naturalWidth; cv.height = img.naturalHeight; dibujar(); };
+      img.onerror = () => TE.toast('No se pudo obtener imagen de la cámara. Verifica que esté conectada.', 'critica');
+      img.src = TE.conToken(`/api/camaras/${c.id}/snapshot.jpg?t=${Date.now()}`);
+      dibujar();
+    }
+    const punto = (e) => { const r = cv.getBoundingClientRect(); return [Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1), Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1)]; };
+    const redondear = (p) => [+p[0].toFixed(4), +p[1].toFixed(4)];
+    const cerrarPoligono = () => { if (tipo !== 'puertas' && puntos.length >= 3) { roi[tipo].push(puntos.map(redondear)); sucio = true; } puntos = []; dibujar(); };
+    cv.addEventListener('click', (e) => {
+      const p = punto(e);
+      if (tipo === 'puertas') {
+        puntos.push(p);
+        if (puntos.length === 2) {
+          const r = cv.getBoundingClientRect();
+          if (Math.hypot((puntos[0][0] - p[0]) * r.width, (puntos[0][1] - p[1]) * r.height) > 12) {
+            roi.puertas.push(orientar({ a: redondear(puntos[0]), b: redondear(p) })); sucio = true;
+          }
+          puntos = [];
+        }
+        return dibujar();
+      }
+      if (puntos.length >= 3) {
+        const r = cv.getBoundingClientRect(), d = Math.hypot((p[0] - puntos[0][0]) * r.width, (p[1] - puntos[0][1]) * r.height);
+        if (d < 14) return cerrarPoligono();
+      }
+      puntos.push(p); dibujar();
+    });
+    cv.addEventListener('dblclick', (e) => { e.preventDefault(); if (tipo !== 'puertas') { puntos.pop(); cerrarPoligono(); } });
+    const tecla = (e) => { if (e.key === 'Enter') cerrarPoligono(); if (e.key === 'Escape' && puntos.length) { e.stopPropagation(); puntos = []; dibujar(); } };
+    document.addEventListener('keydown', tecla, true);
+    m.el.querySelectorAll('.zona-opcion').forEach(o => {
+      const sel = () => { if (puntos.length >= 3) cerrarPoligono(); puntos = []; tipo = o.dataset.z; dibujar(); };
+      o.onclick = sel; o.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sel(); } };
+    });
+    m.$('#z-puertas').onclick = (e) => {
+      const i = e.target.dataset.inv ?? e.target.dataset.del;
+      if (i === undefined) return;
+      if (e.target.dataset.inv !== undefined) { const pu = roi.puertas[+i]; [pu.a, pu.b] = [pu.b, pu.a]; }
+      else roi.puertas.splice(+i, 1);
+      sucio = true; dibujar();
+    };
+    m.$('#z-deshacer').onclick = () => { if (puntos.length) puntos.pop(); else if (roi[tipo].length) { roi[tipo].pop(); sucio = true; } dibujar(); };
+    m.$('#z-borrar-tipo').onclick = () => { roi[tipo] = []; puntos = []; sucio = true; dibujar(); };
+    m.$('#z-recargar').onclick = cargarImagen;
+    m.$('#z-cancelar').onclick = () => { if (!sucio || confirm('¿Descartar los cambios?')) m.cerrar(); };
+    m.$('#z-guardar').onclick = async () => {
+      if (puntos.length >= 3) cerrarPoligono();
+      const zonasOk = roi.exterior.length && roi.interior.length;
+      if (!zonasOk && !roi.puertas.length &&
+          !confirm('Para detectar evasiones necesitas zonas de carril y plataforma, o al menos una línea de puerta. ¿Guardar de todas formas?')) return;
+      try { await TE.api('PUT', `/api/camaras/${c.id}/zonas`, { roi }); m.cerrar(); TE.toast('Zonas guardadas. La detección ya las está usando.'); camaras = []; cargar(); }
+      catch (err) { TE.error(err); }
+    };
+    cargarImagen();
+  }
+
+  cargar();
+  setInterval(cargar, 2000);
+  setInterval(refrescarCuadros, 250);
+  if (location.hash) setTimeout(() => document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' }), 600);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Panel</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera">
+    <div><h1>Centro de monitoreo</h1><p id="subtitulo">Cargando…</p></div>
+  </div>
+  <div id="aviso-pass" class="banda rojo oculto">Estás usando la contraseña inicial del administrador. <a href="configuracion.html#cuenta">Cámbiala ahora</a>.</div>
+  <div id="aviso-camaras" class="banda azul oculto">Aún no hay cámaras. <a href="camaras.html">Agrega una cámara</a> (webcam, cámara IP o un video) y dibuja sus zonas para empezar a detectar.</div>
+
+  <div class="indicadores">
+    <div class="indicador critico"><div class="valor" id="k-ingresos">–</div><div class="nombre">Ingresos laterales hoy</div><div class="nota" id="k-ingresos-n"></div></div>
+    <div class="indicador"><div class="valor" id="k-total">–</div><div class="nombre">Eventos hoy</div><div class="nota" id="k-pico"></div></div>
+    <div class="indicador"><div class="valor" id="k-alertas">–</div><div class="nombre">Alertas sin atender</div><div class="nota"><a href="alertas.html">Ir a alertas</a></div></div>
+    <div class="indicador"><div class="valor" id="k-camaras">–</div><div class="nombre">Cámaras en línea</div><div class="nota" id="k-rend"></div></div>
+    <div class="indicador"><div class="valor" id="k-prec">–</div><div class="nombre">Precisión verificada</div><div class="nota" id="k-prec-n"></div></div>
+  </div>
+
+  <div class="rejilla-2" style="margin-bottom:22px">
+    <section class="bloque">
+      <h2>Eventos por hora, hoy</h2>
+      <div class="grafica" id="g-hora"></div>
+    </section>
+    <section class="bloque">
+      <h2>Por tipo de evento</h2>
+      <div class="desglose" id="desglose"></div>
+      <h2 style="margin-top:22px">Últimos 14 días</h2>
+      <div class="grafica" id="g-dias"></div>
+    </section>
+  </div>
+
+  <section class="bloque sin-relleno" style="margin-bottom:22px">
+    <div class="bloque-cab"><h2>Cámaras</h2><a class="btn chico" href="camaras.html">Ver todas</a></div>
+    <div class="mosaico" id="mini-camaras" style="padding:18px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>
+  </section>
+
+  <section class="bloque sin-relleno">
+    <div class="bloque-cab"><h2>Eventos recientes</h2><a class="btn chico" href="historial.html">Historial completo</a></div>
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Hora</th><th>Tipo</th><th>Estación</th><th>Cámara</th><th>Confianza</th><th>Revisión</th></tr></thead>
+      <tbody id="recientes"></tbody>
+    </table></div>
+  </section>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('panel.html')) {
+  if (sessionStorage.getItem('te_pass_defecto')) document.getElementById('aviso-pass').classList.remove('oculto');
+  const $ = (id) => document.getElementById(id);
+
+  async function resumen() {
+    try {
+      const r = await TE.get('/api/stats/resumen');
+      const ing = r.por_tipo.INGRESO_LATERAL || 0;
+      $('k-ingresos').textContent = ing;
+      $('k-ingresos-n').textContent = r.estacion_critica ? `Más eventos: ${r.estacion_critica}` : 'Sin eventos hoy';
+      $('k-total').textContent = r.total;
+      $('k-pico').textContent = r.hora_pico != null ? `Hora pico ${String(r.hora_pico).padStart(2, '0')}:00` : '';
+      $('k-alertas').textContent = r.alertas_activas;
+      $('k-camaras').textContent = `${r.camaras_en_linea}/${r.camaras_total}`;
+      $('k-rend').textContent = r.fps_promedio != null ? `${r.fps_promedio} FPS · ${Math.round(r.latencia_promedio_ms)} ms por cuadro` : '';
+      $('k-prec').textContent = r.precision_global != null ? TE.pct(r.precision_global) : '–';
+      $('k-prec-n').textContent = r.revisados_global ? `${r.revisados_global} eventos revisados` : 'Confirma o rechaza eventos para medirla';
+      $('subtitulo').textContent = `Hoy, ${new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })} · actualizado ${new Date().toLocaleTimeString('es-CO')}`;
+      $('aviso-camaras').classList.toggle('oculto', r.camaras_total > 0);
+      TE.barras($('g-hora'), r.por_hora, r.por_hora.map((_, h) => String(h).padStart(2, '0')),
+        { destacar: new Date().getHours(), cadaEtiqueta: 2, titulo: 'Eventos por hora' });
+      const max = Math.max(1, ...Object.values(r.por_tipo));
+      $('desglose').innerHTML = Object.entries(TE.TIPOS).map(([k, n]) => {
+        const v = r.por_tipo[k] || 0;
+        return `<div class="item ${k === 'INGRESO_LATERAL' ? 'ingreso' : ''}"><span>${n}</span><b class="num">${v}</b>
+          <div class="pista"><i style="width:${(v / max) * 100}%"></i></div></div>`;
+      }).join('');
+    } catch (e) { $('subtitulo').textContent = e.message; }
+  }
+
+  async function dias() {
+    try {
+      const d = await TE.get('/api/stats/diario?dias=14');
+      TE.barras($('g-dias'), d.map(x => x.total), d.map(x => x.fecha.slice(8)), { destacar: d.length - 1, alto: 150, cadaEtiqueta: 2, titulo: 'Eventos por día', ancho: 380 });
+    } catch (e) {}
+  }
+
+  async function recientes() {
+    try {
+      const d = await TE.get('/api/eventos?tam=10');
+      $('recientes').innerHTML = d.items.length ? d.items.map(e => `
+        <tr class="clic" data-id="${e.id}" tabindex="0">
+          <td class="num">${TE.hora(e.timestamp)}</td>
+          <td>${TE.etiquetaNivel(TE.nivelDeRiesgo(e.nivel_riesgo))} ${TE.esc(e.tipo_nombre)}</td>
+          <td>${TE.esc(e.estacion)}</td><td>${TE.esc(e.camara)}</td>
+          <td class="num">${TE.pct(e.confianza)}</td><td>${TE.etiquetaRevision(e.confirmado)}</td></tr>`).join('')
+        : `<tr><td colspan="6" class="vacio"><strong>Sin eventos todavía</strong>Cuando una cámara con zonas detecte un cruce aparecerá aquí.</td></tr>`;
+    } catch (e) {}
+  }
+  $('recientes').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) TE.verEvento(+tr.dataset.id, recientes); });
+  $('recientes').addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr && e.key === 'Enter') TE.verEvento(+tr.dataset.id, recientes); });
+
+  let camaras = [];
+  async function mini() {
+    try {
+      camaras = (await TE.get('/api/camaras')).filter(c => c.activa).slice(0, 4);
+      $('mini-camaras').innerHTML = camaras.length ? camaras.map(c => `
+        <a class="camara" href="camaras.html#cam-${c.id}" style="text-decoration:none;color:inherit">
+          <div class="video"><img data-cam="${c.id}" alt="Video de ${TE.esc(c.codigo)}"></div>
+          <div class="datos"><div class="titulo"><strong>${TE.esc(c.codigo)}</strong><span class="meta">${TE.esc(c.estacion)}</span></div></div>
+        </a>`).join('') : '<div class="vacio"><strong>No hay cámaras activas</strong>Agrega o inicia una cámara para ver su video aquí.</div>';
+    } catch (e) {}
+  }
+  function refrescarCuadros() {
+    document.querySelectorAll('img[data-cam]').forEach(img => {
+      if (img.dataset.cargando) return;
+      img.dataset.cargando = 1;
+      const nuevo = new Image();
+      nuevo.onload = nuevo.onerror = () => { if (nuevo.complete && nuevo.naturalWidth) img.src = nuevo.src; delete img.dataset.cargando; };
+      nuevo.src = TE.conToken(`/api/camaras/${img.dataset.cam}/frame.jpg?t=${Date.now()}`);
+    });
+  }
+
+  resumen(); dias(); recientes(); mini();
+  setInterval(resumen, 10000); setInterval(refrescarCuadros, 400);
+  document.addEventListener('te:evento', () => { resumen(); recientes(); });
+  document.addEventListener('te:revision', () => { resumen(); recientes(); });
+  document.addEventListener('te:alerta_cerrada', resumen);
+}
+</script>
+</body>
+</html>

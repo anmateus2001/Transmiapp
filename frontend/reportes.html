@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Reportes</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera">
+    <div><h1>Reportes</h1><p>Reportes en PDF con totales por tipo, hora y estación, precisión verificada por los operadores y evidencia anonimizada de los ingresos laterales.</p></div>
+  </div>
+  <section class="bloque" data-rol="supervisor">
+    <h2>Generar un reporte</h2>
+    <div class="filtros" style="margin-bottom:0">
+      <div class="campo"><label for="r-desde">Desde</label><input id="r-desde" type="datetime-local"></div>
+      <div class="campo"><label for="r-hasta">Hasta</label><input id="r-hasta" type="datetime-local"></div>
+      <div class="campo"><label for="r-est">Estación</label><select id="r-est"><option value="">Todas</option></select></div>
+      <div class="segmentos" id="rapidos" style="margin-bottom:1px">
+        <button type="button" data-d="0">Hoy</button><button type="button" data-d="7">7 días</button><button type="button" data-d="30">30 días</button>
+      </div>
+      <button class="btn primario" id="btn-generar">Generar PDF</button>
+    </div>
+  </section>
+  <section class="bloque sin-relleno">
+    <div class="bloque-cab"><h2>Reportes generados</h2></div>
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>#</th><th>Periodo</th><th>Estación</th><th>Eventos</th><th>Generado</th><th>Por</th><th></th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table></div>
+  </section>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('reportes.html')) {
+  const $ = (id) => document.getElementById(id);
+  const local = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  function rango(dias) {
+    const hasta = new Date(); hasta.setHours(23, 59, 0, 0);
+    const desde = new Date(); desde.setHours(0, 0, 0, 0); desde.setDate(desde.getDate() - dias);
+    $('r-desde').value = local(desde); $('r-hasta').value = local(hasta);
+  }
+  rango(0);
+  $('rapidos').onclick = (e) => { if (e.target.dataset.d) rango(+e.target.dataset.d); };
+  TE.get('/api/estaciones').then(es => es.forEach(e => $('r-est').insertAdjacentHTML('beforeend', `<option value="${e.id}">${TE.esc(e.nombre)}</option>`)));
+  async function cargar() {
+    try {
+      const rs = await TE.get('/api/reportes');
+      $('filas').innerHTML = rs.length ? rs.map(r => `<tr>
+        <td class="num">${r.id}</td><td>${new Date(r.desde).toLocaleString('es-CO')} a ${new Date(r.hasta).toLocaleString('es-CO')}</td>
+        <td>${TE.esc(r.estacion)}</td><td class="num">${r.total_eventos}</td><td>${TE.fecha(r.generado)}</td><td>${TE.esc(r.operador || '')}</td>
+        <td>${r.disponible ? `<a class="btn chico" target="_blank" href="${TE.conToken(`/api/reportes/${r.id}/pdf`)}">Abrir PDF</a>` : '<span class="etq gris">Archivo eliminado</span>'}</td></tr>`).join('')
+        : '<tr><td colspan="7" class="vacio"><strong>Aún no hay reportes</strong>Elige un periodo y genera el primero.</td></tr>';
+    } catch (e) { TE.error(e); }
+  }
+  $('btn-generar').onclick = async () => {
+    const b = $('btn-generar'); b.disabled = true; b.textContent = 'Generando…';
+    try {
+      const r = await TE.api('POST', '/api/reportes', { desde: $('r-desde').value, hasta: $('r-hasta').value, estacion_id: $('r-est').value ? +$('r-est').value : null });
+      TE.toast(`Reporte generado con ${r.total_eventos} eventos.`);
+      window.open(TE.conToken(`/api/reportes/${r.id}/pdf`), '_blank');
+      cargar();
+    } catch (e) { TE.error(e); }
+    b.disabled = false; b.textContent = 'Generar PDF';
+  };
+  cargar();
+}
+</script>
+</body>
+</html>

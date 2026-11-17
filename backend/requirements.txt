@@ -1,0 +1,17 @@
+# Núcleo
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+sqlalchemy>=2.0
+bcrypt>=4.1
+PyJWT>=2.8
+reportlab>=4.0
+numpy>=1.26
+opencv-python>=4.9
+
+# Detección con YOLO + ByteTrack (si no se instalan, el sistema usa detección por movimiento)
+ultralytics>=8.2
+lap>=0.5
+
+# Solo si usas PostgreSQL en lugar de SQLite
+# psycopg2-binary>=2.9

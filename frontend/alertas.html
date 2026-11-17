@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Alertas</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera">
+    <div><h1>Alertas</h1><p>Se actualizan al instante. Abre la evidencia, revisa el clip y marca la alerta como atendida o descártala si es un falso positivo.</p></div>
+  </div>
+  <div class="indicadores">
+    <div class="indicador critico"><div class="valor" id="n-criticas">–</div><div class="nombre">Críticas sin atender</div><div class="nota">Ingresos por puerta lateral</div></div>
+    <div class="indicador"><div class="valor" id="n-medias">–</div><div class="nombre">Medias sin atender</div><div class="nota">Personas en el carril o saliendo</div></div>
+    <div class="indicador"><div class="valor" id="n-bajas">–</div><div class="nombre">Bajas sin atender</div><div class="nota">Aglomeraciones</div></div>
+    <div class="indicador"><div class="valor" id="n-atendidas">–</div><div class="nombre">Cerradas hoy</div></div>
+  </div>
+  <div class="filtros">
+    <div class="segmentos" id="filtro">
+      <button type="button" data-f="activas" class="on">Sin atender</button><button type="button" data-f="atendida">Atendidas</button>
+      <button type="button" data-f="descartada">Descartadas</button><button type="button" data-f="todas">Todas</button>
+    </div>
+  </div>
+  <section class="bloque sin-relleno" id="lista"></section>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('alertas.html')) {
+  const $ = (id) => document.getElementById(id);
+  let filtro = 'activas';
+  const ESTADO = { enviada: '', atendida: '<span class="etq verde">Atendida</span>', descartada: '<span class="etq gris">Descartada</span>' };
+
+  async function cargar() {
+    try {
+      const d = await TE.get(`/api/alertas?estado=${filtro}&limite=200`);
+      $('n-criticas').textContent = d.activas.critica || 0;
+      $('n-medias').textContent = d.activas.media || 0;
+      $('n-bajas').textContent = d.activas.baja || 0;
+      $('n-atendidas').textContent = d.atendidas_hoy;
+      const sup = TE.puede('supervisor');
+      $('lista').innerHTML = d.items.length ? d.items.map(a => {
+        const e = a.evento;
+        return `<div class="alerta ${a.nivel} ${a.estado !== 'enviada' ? 'cerrada' : ''}">
+          ${e.tiene_imagen ? `<img src="${TE.conToken(`/api/eventos/${e.id}/imagen`)}" alt="Evidencia" data-ev="${e.id}" loading="lazy">` : '<div></div>'}
+          <div>
+            <div class="que">${TE.esc(e.tipo_nombre)} ${TE.etiquetaNivel(a.nivel)} ${ESTADO[a.estado]}</div>
+            <div class="donde">${TE.esc(e.estacion)} · ${TE.esc(e.camara)} · ${TE.hace(a.timestamp)} (${TE.hora(a.timestamp)}) · confianza ${TE.pct(e.confianza)}</div>
+            <div class="donde">${TE.esc(e.detalle || '')}${a.receptor ? ` · cerrada por ${TE.esc(a.receptor)} a las ${TE.hora(a.fecha_atencion)}` : ''}</div>
+          </div>
+          <div class="acciones">
+            <button class="btn chico" data-ev="${e.id}">Ver evidencia</button>
+            ${sup && a.estado === 'enviada' ? `<button class="btn chico" data-a="descartar" data-id="${a.id}">Descartar</button>
+              <button class="btn chico primario" data-a="atender" data-id="${a.id}">Atender</button>` : ''}
+          </div></div>`;
+      }).join('') : `<div class="vacio"><strong>${filtro === 'activas' ? 'No hay alertas pendientes' : 'Sin alertas en este filtro'}</strong>
+        ${filtro === 'activas' ? 'Las nuevas alertas aparecerán aquí con un aviso sonoro.' : ''}</div>`;
+    } catch (e) { TE.error(e); }
+  }
+  $('filtro').onclick = (e) => {
+    if (!e.target.dataset.f) return;
+    filtro = e.target.dataset.f;
+    $('filtro').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === e.target));
+    cargar();
+  };
+  $('lista').addEventListener('click', async (e) => {
+    const t = e.target;
+    if (t.dataset.ev) return TE.verEvento(+t.dataset.ev, cargar);
+    if (t.dataset.a) {
+      t.disabled = true;
+      try { await TE.api('POST', `/api/alertas/${t.dataset.id}/${t.dataset.a}`); TE.toast(t.dataset.a === 'atender' ? 'Alerta atendida.' : 'Alerta descartada.'); }
+      catch (err) { TE.error(err); }
+      cargar();
+    }
+  });
+  cargar();
+  ['te:evento', 'te:revision', 'te:alerta_cerrada'].forEach(ev => document.addEventListener(ev, cargar));
+  setInterval(cargar, 30000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TransmiEye · Historial</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="cabecera">
+    <div><h1>Historial de eventos</h1><p>Todos los eventos registrados. Haz clic en una fila para ver la evidencia, reproducir el clip y confirmar o rechazar el evento.</p></div>
+    <div class="acciones"><button class="btn" id="btn-csv">Descargar CSV</button></div>
+  </div>
+  <section class="bloque">
+    <div class="filtros" style="margin-bottom:0">
+      <div class="campo"><label for="f-desde">Desde</label><input id="f-desde" type="date"></div>
+      <div class="campo"><label for="f-hasta">Hasta</label><input id="f-hasta" type="date"></div>
+      <div class="campo"><label for="f-est">Estación</label><select id="f-est"><option value="">Todas</option></select></div>
+      <div class="campo"><label for="f-cam">Cámara</label><select id="f-cam"><option value="">Todas</option></select></div>
+      <div class="campo"><label for="f-tipo">Tipo</label><select id="f-tipo"><option value="">Todos</option></select></div>
+      <div class="campo"><label for="f-estado">Revisión</label><select id="f-estado"><option value="">Todas</option>
+        <option value="pendiente">Pendiente</option><option value="confirmado">Confirmado</option><option value="rechazado">Rechazado</option></select></div>
+      <button class="btn" id="btn-limpiar">Limpiar filtros</button>
+    </div>
+  </section>
+  <section class="bloque sin-relleno">
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>#</th><th>Fecha y hora</th><th>Tipo</th><th>Estación</th><th>Cámara</th><th>Confianza</th><th>Revisión</th><th>Evidencia</th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table></div>
+    <div class="paginacion"><span id="info"></span><div class="acciones"><button class="btn chico" id="ant">Anterior</button><button class="btn chico" id="sig">Siguiente</button></div></div>
+  </section>
+</main>
+<script src="js/common.js"></script>
+<script>
+if (TE.montar('historial.html')) {
+  const $ = (id) => document.getElementById(id);
+  let pagina = 1, total = 0; const TAM = 25;
+  Object.entries(TE.TIPOS).forEach(([k, n]) => $('f-tipo').insertAdjacentHTML('beforeend', `<option value="${k}">${n}</option>`));
+  TE.get('/api/estaciones').then(es => es.forEach(e => $('f-est').insertAdjacentHTML('beforeend', `<option value="${e.id}">${TE.esc(e.nombre)}</option>`)));
+  TE.get('/api/camaras').then(cs => cs.forEach(c => $('f-cam').insertAdjacentHTML('beforeend', `<option value="${c.id}">${TE.esc(c.codigo)}</option>`)));
+
+  const filtros = () => {
+    const p = new URLSearchParams();
+    [['desde', 'f-desde'], ['hasta', 'f-hasta'], ['estacion_id', 'f-est'], ['camara_id', 'f-cam'], ['tipo', 'f-tipo'], ['estado', 'f-estado']]
+      .forEach(([k, id]) => { if ($(id).value) p.set(k, $(id).value); });
+    return p;
+  };
+  async function cargar() {
+    const p = filtros(); p.set('pagina', pagina); p.set('tam', TAM);
+    try {
+      const d = await TE.get('/api/eventos?' + p);
+      total = d.total;
+      $('filas').innerHTML = d.items.length ? d.items.map(e => `
+        <tr class="clic" data-id="${e.id}" tabindex="0">
+          <td class="num">${e.id}</td><td class="num">${new Date(e.timestamp).toLocaleString('es-CO')}</td>
+          <td>${TE.etiquetaNivel(TE.nivelDeRiesgo(e.nivel_riesgo))} ${TE.esc(e.tipo_nombre)}</td>
+          <td>${TE.esc(e.estacion)}</td><td>${TE.esc(e.camara)}</td><td class="num">${TE.pct(e.confianza)}</td>
+          <td>${TE.etiquetaRevision(e.confirmado)}</td>
+          <td>${e.tiene_imagen ? (e.clip_frames ? 'Imagen y clip' : 'Imagen') : '<span class="etq gris">Purgada</span>'}</td></tr>`).join('')
+        : '<tr><td colspan="8" class="vacio"><strong>No hay eventos con estos filtros</strong>Cambia las fechas o quita algún filtro.</td></tr>';
+      const desde = total ? (pagina - 1) * TAM + 1 : 0;
+      $('info').textContent = `${desde}–${Math.min(pagina * TAM, total)} de ${total} eventos`;
+      $('ant').disabled = pagina <= 1; $('sig').disabled = pagina * TAM >= total;
+    } catch (e) { TE.error(e); }
+  }
+  document.querySelectorAll('.filtros input, .filtros select').forEach(el => el.addEventListener('change', () => { pagina = 1; cargar(); }));
+  $('btn-limpiar').onclick = () => { document.querySelectorAll('.filtros input, .filtros select').forEach(el => el.value = ''); pagina = 1; cargar(); };
+  $('ant').onclick = () => { pagina--; cargar(); };
+  $('sig').onclick = () => { pagina++; cargar(); };
+  $('btn-csv').onclick = () => TE.descargar('/api/eventos/export.csv?' + filtros());
+  const abrir = (tr) => tr && TE.verEvento(+tr.dataset.id, cargar);
+  $('filas').addEventListener('click', (e) => abrir(e.target.closest('tr[data-id]')));
+  $('filas').addEventListener('keydown', (e) => { if (e.key === 'Enter') abrir(e.target.closest('tr[data-id]')); });
+  document.addEventListener('te:evento', () => { if (pagina === 1) cargar(); });
+  cargar();
+}
+</script>
+</body>
+</html>
